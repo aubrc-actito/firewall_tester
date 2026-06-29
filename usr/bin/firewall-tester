@@ -54,11 +54,35 @@ done
 if [[ ! -e $logfile ]]; then touch $logfile; fi
 if [[ ! -w $logfile || $? -ne 0 ]]; then echo "log file $logfile is not writeable or cant create log file!"; exit 1; fi
 
+function extend_nmap_ports () {
+  local allowedgrep
+  local a1
+  local a2
+  local most_used_ports
+  local extended_ports
+
+  most_used_ports=$(grep '/tcp' /usr/share/nmap/nmap-services | sort -t$'\t' -k3 -rn | head -1000 | awk '{print $2}' | cut -d'/' -f1 | sort -n)
+  allowedgrep=`echo $allowed | $sedbin -e 's/ *, */\ /g'`
+  a1=($allowedgrep)
+  a2=($most_used_ports)
+  diff=($(comm -23 <(printf "%s\n" "${a1[@]}" | sort) <(printf "%s\n" "${a2[@]}" | sort)))
+  extended_ports=( ${a2[@]} ${diff[@]} )
+
+  IFS=$'\n' extended_ports_sorted=($(sort -n <<<"${extended_ports[*]}"))
+  unset IFS
+
+  echo ${extended_ports_sorted[@]}
+}
+
 function check_server () {
     local allowed
     local server
     local nmaptmp
     local allowedgrep
+    local a1
+    local a2
+    local ports_to_scan
+    local ports_to_scan_grep
 
     if [[ -z "$1" ]]; then echo "server not found" exit; else server=$1; fi
     if [[ -z "$2" ]]; then allowed="none"; else allowed=$2; fi
@@ -66,7 +90,10 @@ function check_server () {
     echo $(date +"%Y.%m.%d %H:%M:%S") - scanning server $server. allowed ports: $allowed | $teebin -a $logfile
     nmaptmp=`mktemp`
     if [[ $? -ne 0 ]]; then echo "cant create temp file."; exit 1; fi
-    $nmapbin -r -v0 -sU -sT --min-parallelism 100 -PA1-65535 --max-retries 1 -T5 -n $server -oN $nmaptmp
+    ports_to_scan=$(extend_nmap_ports $allowed)
+    ports_to_scan_grep=`echo $ports_to_scan | $sedbin -e 's/\ /,/g'`
+
+    $nmapbin -p $ports_to_scan_grep -r -v0 -sU -sT --min-parallelism 100 -PA1-65535 --max-retries 1 -T5 -n $server -oN $nmaptmp
 
     allowedgrep=`echo $allowed | $sedbin -e 's/ *, */\\\|/g'`
     openports=`$grepbin -e '.*open.[^port]' $nmaptmp | $grepbin -v "Not shown" | $grepbin -v "$allowedgrep"`
