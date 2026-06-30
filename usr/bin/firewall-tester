@@ -91,9 +91,14 @@ function check_server () {
     nmaptmp=`mktemp`
     if [[ $? -ne 0 ]]; then echo "cant create temp file."; exit 1; fi
     ports_to_scan=$(extend_nmap_ports $allowed)
-    ports_to_scan_grep=`echo $ports_to_scan | $sedbin -e 's/\ /,/g'`
 
-    $nmapbin -p $ports_to_scan_grep -r -v0 -sU -sT --min-parallelism 100 -PA1-65535 --max-retries 1 -T5 -n $server -oN $nmaptmp
+    if [ "$allowed" = "none" ]; then
+      ports_to_scan_grep="-"
+    else
+      ports_to_scan_grep=`echo $ports_to_scan | $sedbin -e 's/\ /,/g'`
+    fi
+
+    $nmapbin -p$ports_to_scan_grep -r -v0 -sU -sT --min-parallelism 100 -PA1-65535 --max-retries 1 -T5 -n $server -oN $nmaptmp
 
     allowedgrep=`echo $allowed | $sedbin -e 's/ *, */\\\|/g'`
     openports=`$grepbin -e '.*open.[^port]' $nmaptmp | $grepbin -v "Not shown" | $grepbin -v "$allowedgrep"`
